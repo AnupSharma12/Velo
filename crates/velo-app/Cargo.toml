@@ -1,0 +1,8 @@
+[package]
+name = "velo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+velo-core = { path = "../velo-core" }
