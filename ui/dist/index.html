@@ -58,16 +58,17 @@
 
       <section class="content" id="content-area">
         <!-- Hero / Now Playing Area -->
-        <div class="hero">
+        <div class="hero" id="hero">
           <div class="hero-art">
-            <div class="album-art-placeholder">
+            <div class="album-art-placeholder" id="hero-album-art">
               <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
             </div>
           </div>
           <div class="hero-info">
             <span class="hero-label">NOW PLAYING</span>
-            <h1 class="hero-title">No Track Selected</h1>
-            <p class="hero-artist">Add music to get started</p>
+            <h1 class="hero-title" id="hero-title">No Track Selected</h1>
+            <p class="hero-artist" id="hero-artist">Browse or search to get started</p>
+            <div class="hero-meta" id="hero-meta"></div>
           </div>
         </div>
 
@@ -94,12 +95,12 @@
     <!-- Bottom Player Bar -->
     <footer class="player-bar">
       <div class="player-track">
-        <div class="player-art-small">
+        <div class="player-art-small" id="player-album-art">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
         <div class="player-track-info">
-          <span class="player-title">—</span>
-          <span class="player-artist">—</span>
+          <span class="player-title" id="player-title">—</span>
+          <span class="player-artist" id="player-artist">—</span>
         </div>
       </div>
 
