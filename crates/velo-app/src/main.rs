@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 fn main() {
-    println!("Velo v{}", env!("CARGO_PKG_VERSION"));
+    velo_app_lib::run();
 }
