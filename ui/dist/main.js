@@ -796,6 +796,8 @@ const authDom = {
   topbarUser: $("#topbar-user"),
   userEmail: $("#user-email"),
   btnLogout: $("#btn-logout"),
+  btnGoogle: $("#btn-oauth-google"),
+  btnGithub: $("#btn-oauth-github"),
 };
 
 function showAuthScreen() {
@@ -886,13 +888,46 @@ authDom.btnLogout.addEventListener("click", async () => {
   showAuthScreen();
 });
 
-// Check existing session on load
+// OAuth social login
+async function handleOAuthSignIn(provider) {
+  authDom.btnGoogle.disabled = true;
+  authDom.btnGithub.disabled = true;
+  authDom.submit.disabled = true;
+  authDom.error.textContent = "";
+
+  try {
+    const session = await tauriInvoke("auth_oauth_sign_in", { provider });
+    authState.session = session;
+    authState.user = session.user;
+    hideAuthScreen();
+    updateUserUI();
+  } catch (err) {
+    authDom.error.textContent = String(err);
+  } finally {
+    authDom.btnGoogle.disabled = false;
+    authDom.btnGithub.disabled = false;
+    authDom.submit.disabled = false;
+  }
+}
+
+authDom.btnGoogle.addEventListener("click", () => handleOAuthSignIn("google"));
+authDom.btnGithub.addEventListener("click", () => handleOAuthSignIn("github"));
+
+// Check existing session on load & refresh token
 async function initAuth() {
   try {
     const session = await tauriInvoke("auth_get_session", {});
     if (session) {
-      authState.session = session;
-      authState.user = session.user;
+      try {
+        const refreshed = await tauriInvoke("auth_refresh_session", {});
+        authState.session = refreshed;
+        authState.user = refreshed.user;
+      } catch {
+        // Refresh failed — session expired
+        authState.session = null;
+        authState.user = null;
+        return;
+      }
       hideAuthScreen();
       updateUserUI();
       return;

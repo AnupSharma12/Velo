@@ -71,6 +71,7 @@ async fn auth_sign_up(
         let mut guard = state.session.lock().map_err(|e| e.to_string())?;
         *guard = Some(session.clone());
     }
+    auth::save_session(&session)?;
     Ok(session)
 }
 
@@ -85,6 +86,7 @@ async fn auth_sign_in(
         let mut guard = state.session.lock().map_err(|e| e.to_string())?;
         *guard = Some(session.clone());
     }
+    auth::save_session(&session)?;
     Ok(session)
 }
 
@@ -114,6 +116,7 @@ async fn auth_sign_out(state: State<'_, AppState>) -> Result<(), String> {
         let mut guard = state.session.lock().map_err(|e| e.to_string())?;
         *guard = None;
     }
+    auth::clear_session();
     Ok(())
 }
 
@@ -126,15 +129,77 @@ async fn auth_get_session(state: State<'_, AppState>) -> Result<Option<AuthSessi
     Ok(session)
 }
 
+#[tauri::command]
+async fn auth_refresh_session(state: State<'_, AppState>) -> Result<AuthSession, String> {
+    let refresh_token = {
+        let guard = state.session.lock().map_err(|e| e.to_string())?;
+        guard
+            .as_ref()
+            .ok_or_else(|| "No session to refresh".to_string())?
+            .refresh_token
+            .clone()
+    };
+    let session = state.supabase.refresh(&refresh_token).await?;
+    {
+        let mut guard = state.session.lock().map_err(|e| e.to_string())?;
+        *guard = Some(session.clone());
+    }
+    auth::save_session(&session)?;
+    Ok(session)
+}
+
+#[tauri::command]
+async fn auth_oauth_sign_in(
+    provider: String,
+    state: State<'_, AppState>,
+) -> Result<AuthSession, String> {
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let redirect_url = format!("http://localhost:{}/callback", port);
+
+    let (code_verifier, code_challenge) = auth::generate_pkce();
+
+    let auth_url = state
+        .supabase
+        .get_oauth_url(&provider, &code_challenge, &redirect_url);
+    open::that(&auth_url).map_err(|e| e.to_string())?;
+
+    let code = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        auth::wait_for_oauth_callback(listener),
+    )
+    .await
+    .map_err(|_| "OAuth timed out \u{2014} try again".to_string())??;
+
+    let session = state
+        .supabase
+        .exchange_code(&code, &code_verifier)
+        .await?;
+
+    {
+        let mut guard = state.session.lock().map_err(|e| e.to_string())?;
+        *guard = Some(session.clone());
+    }
+    auth::save_session(&session)?;
+
+    Ok(session)
+}
+
 // ── App Entry ───────────────────────────────────────────
 
 pub fn run() {
     dotenvy::dotenv().ok();
 
+    let initial_session = auth::load_session();
+
     tauri::Builder::default()
         .manage(AppState {
             supabase: SupabaseAuth::new(),
-            session: Mutex::new(None),
+            session: Mutex::new(initial_session),
         })
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -144,6 +209,8 @@ pub fn run() {
             auth_get_user,
             auth_sign_out,
             auth_get_session,
+            auth_refresh_session,
+            auth_oauth_sign_in,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Velo");
