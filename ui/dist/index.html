@@ -30,12 +30,13 @@
         </button>
       </nav>
       <div class="sidebar-playlists">
-        <h3 class="section-title">Playlists</h3>
-        <ul class="playlist-list">
-          <li class="playlist-item">Liked Songs</li>
-          <li class="playlist-item">Recently Played</li>
-          <li class="playlist-item">Chill Mix</li>
-        </ul>
+        <div class="playlists-header">
+          <h3 class="section-title">Playlists</h3>
+          <button class="playlist-add-btn" id="btn-new-playlist" aria-label="New playlist">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+        <ul class="playlist-list" id="playlist-list"></ul>
       </div>
     </aside>
 
@@ -72,6 +73,9 @@
           </div>
         </div>
 
+        <!-- Waveform / Spectrum Visualization -->
+        <canvas id="visualizer" class="visualizer-canvas"></canvas>
+
         <!-- Track List -->
         <div class="tracklist">
           <div class="tracklist-header">
@@ -91,6 +95,15 @@
         </div>
       </section>
     </main>
+
+    <!-- Drag & Drop Overlay -->
+    <div class="drop-overlay" id="drop-overlay">
+      <div class="drop-overlay-content">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <p class="drop-overlay-title">Drop to import</p>
+        <p class="drop-overlay-hint">Audio files &amp; folders</p>
+      </div>
+    </div>
 
     <!-- Bottom Player Bar -->
     <footer class="player-bar">
@@ -147,6 +160,32 @@
     </footer>
 
   </div>
+  <!-- Playlist Modal -->
+  <div class="modal-overlay" id="playlist-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">New Playlist</h2>
+        <button class="modal-close" id="modal-close" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <label class="modal-label" for="playlist-name-input">Name</label>
+        <input type="text" class="modal-input" id="playlist-name-input" placeholder="My Playlist" maxlength="60" />
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-cancel" id="modal-cancel">Cancel</button>
+        <button class="modal-btn modal-btn-save" id="modal-save">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Playlist Context Menu -->
+  <div class="context-menu" id="playlist-context-menu">
+    <button class="context-item" data-action="rename">Rename</button>
+    <button class="context-item" data-action="delete">Delete</button>
+  </div>
+
   <script type="module" src="main.js"></script>
 </body>
 </html>

@@ -13,6 +13,8 @@ const MOCK_TRACKS = [
 ];
 
 // ── Playback State ───────────────────────────────────────
+let nextImportId = 100; // IDs for imported tracks start above mock range
+
 const state = {
   tracks: [...MOCK_TRACKS],
   currentIndex: -1,
@@ -23,6 +25,15 @@ const state = {
   volume: 70,
   shuffleOrder: [],
   shufflePos: -1,
+  playlists: [
+    { id: "pl_1", name: "Liked Songs", trackIds: [1, 3, 6] },
+    { id: "pl_2", name: "Recently Played", trackIds: [2, 5, 9, 10] },
+    { id: "pl_3", name: "Chill Mix", trackIds: [3, 6, 8] },
+  ],
+  nextPlaylistId: 4,
+  activePlaylistId: null,
+  editingPlaylistId: null, // for rename modal
+  contextPlaylistId: null, // for right-click menu
 };
 
 // ── DOM References ───────────────────────────────────────
@@ -49,6 +60,20 @@ const dom = {
   timeTotal: $(".time-total"),
   volumeBar: $(".volume-bar"),
   volumeFill: $("#volume-fill"),
+  // Playlist
+  playlistList: $("#playlist-list"),
+  btnNewPlaylist: $("#btn-new-playlist"),
+  playlistModal: $("#playlist-modal"),
+  modalTitle: $("#modal-title"),
+  modalNameInput: $("#playlist-name-input"),
+  modalSave: $("#modal-save"),
+  modalCancel: $("#modal-cancel"),
+  modalClose: $("#modal-close"),
+  contextMenu: $("#playlist-context-menu"),
+  // Visualizer
+  visualizer: $("#visualizer"),
+  // Drop overlay
+  dropOverlay: $("#drop-overlay"),
 };
 
 // ── Helpers ──────────────────────────────────────────────
@@ -368,3 +393,376 @@ document.addEventListener("keydown", (e) => {
 
 // ── Initialize ───────────────────────────────────────────
 renderTracklist();
+renderPlaylists();
+initVisualizer();
+initDragDrop();
+
+// ── Playlist Management ──────────────────────────────────
+
+function renderPlaylists() {
+  dom.playlistList.innerHTML = state.playlists.map((pl) => `
+    <li class="playlist-item${pl.id === state.activePlaylistId ? ' active' : ''}"
+        data-id="${pl.id}" draggable="true">
+      ${escapeHtml(pl.name)}
+    </li>
+  `).join("");
+  bindPlaylistEvents();
+}
+
+function escapeHtml(str) {
+  const d = document.createElement("div");
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function bindPlaylistEvents() {
+  let dragSrcId = null;
+
+  dom.playlistList.querySelectorAll(".playlist-item").forEach((li) => {
+    // Click to select
+    li.addEventListener("click", () => {
+      state.activePlaylistId = li.dataset.id;
+      renderPlaylists();
+    });
+
+    // Right-click context menu
+    li.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      state.contextPlaylistId = li.dataset.id;
+      dom.contextMenu.style.left = e.clientX + "px";
+      dom.contextMenu.style.top = e.clientY + "px";
+      dom.contextMenu.classList.add("open");
+    });
+
+    // Drag & drop reorder
+    li.addEventListener("dragstart", (e) => {
+      dragSrcId = li.dataset.id;
+      li.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    li.addEventListener("dragend", () => {
+      li.classList.remove("dragging");
+      dom.playlistList.querySelectorAll(".playlist-item").forEach((el) => el.classList.remove("drag-over"));
+    });
+
+    li.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drag-over");
+    });
+
+    li.addEventListener("dragleave", () => {
+      li.classList.remove("drag-over");
+    });
+
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      if (!dragSrcId || dragSrcId === li.dataset.id) return;
+      const fromIdx = state.playlists.findIndex((p) => p.id === dragSrcId);
+      const toIdx = state.playlists.findIndex((p) => p.id === li.dataset.id);
+      if (fromIdx < 0 || toIdx < 0) return;
+      const [moved] = state.playlists.splice(fromIdx, 1);
+      state.playlists.splice(toIdx, 0, moved);
+      renderPlaylists();
+    });
+  });
+}
+
+// Modal helpers
+function openModal(title, saveBtnText, prefill) {
+  dom.modalTitle.textContent = title;
+  dom.modalSave.textContent = saveBtnText;
+  dom.modalNameInput.value = prefill || "";
+  dom.playlistModal.classList.add("open");
+  setTimeout(() => dom.modalNameInput.focus(), 100);
+}
+
+function closeModal() {
+  dom.playlistModal.classList.remove("open");
+  state.editingPlaylistId = null;
+}
+
+// New playlist button
+dom.btnNewPlaylist.addEventListener("click", () => {
+  state.editingPlaylistId = null;
+  openModal("New Playlist", "Create", "");
+});
+
+// Modal save
+dom.modalSave.addEventListener("click", () => {
+  const name = dom.modalNameInput.value.trim();
+  if (!name) return;
+
+  if (state.editingPlaylistId) {
+    // Rename
+    const pl = state.playlists.find((p) => p.id === state.editingPlaylistId);
+    if (pl) pl.name = name;
+  } else {
+    // Create
+    state.playlists.push({
+      id: "pl_" + state.nextPlaylistId++,
+      name,
+      trackIds: [],
+    });
+  }
+  closeModal();
+  renderPlaylists();
+});
+
+// Modal cancel / close
+dom.modalCancel.addEventListener("click", closeModal);
+dom.modalClose.addEventListener("click", closeModal);
+dom.playlistModal.addEventListener("click", (e) => {
+  if (e.target === dom.playlistModal) closeModal();
+});
+
+// Submit on Enter
+dom.modalNameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") dom.modalSave.click();
+  if (e.key === "Escape") closeModal();
+});
+
+// Context menu actions
+dom.contextMenu.querySelectorAll(".context-item").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const action = btn.dataset.action;
+    const pl = state.playlists.find((p) => p.id === state.contextPlaylistId);
+    dom.contextMenu.classList.remove("open");
+
+    if (action === "rename" && pl) {
+      state.editingPlaylistId = pl.id;
+      openModal("Rename Playlist", "Save", pl.name);
+    } else if (action === "delete" && pl) {
+      state.playlists = state.playlists.filter((p) => p.id !== pl.id);
+      if (state.activePlaylistId === pl.id) state.activePlaylistId = null;
+      renderPlaylists();
+    }
+  });
+});
+
+// Close context menu on outside click
+document.addEventListener("click", () => {
+  dom.contextMenu.classList.remove("open");
+});
+
+// ── Waveform / Spectrum Visualization ─────────────────────
+
+let vizCtx = null;
+let vizAnimId = null;
+let vizBars = [];
+
+function initVisualizer() {
+  const canvas = dom.visualizer;
+  vizCtx = canvas.getContext("2d");
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+
+  // Generate initial random bar heights
+  const barCount = 64;
+  vizBars = Array.from({ length: barCount }, () => ({
+    height: Math.random() * 0.3,
+    target: Math.random() * 0.3,
+    velocity: 0,
+  }));
+
+  drawVisualizerFrame();
+}
+
+function resizeCanvas() {
+  const canvas = dom.visualizer;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+}
+
+function drawVisualizerFrame() {
+  const canvas = dom.visualizer;
+  const ctx = vizCtx;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const barCount = vizBars.length;
+  const gap = 2 * devicePixelRatio;
+  const barW = (w - gap * (barCount - 1)) / barCount;
+  const isPlaying = state.playing && state.currentIndex >= 0;
+
+  // Animate bars
+  for (let i = 0; i < barCount; i++) {
+    const bar = vizBars[i];
+    if (isPlaying) {
+      // Randomize targets for active feel
+      if (Math.random() < 0.08) {
+        bar.target = 0.15 + Math.random() * 0.85;
+      }
+    } else {
+      bar.target = 0.05 + Math.random() * 0.12;
+    }
+    // Spring physics
+    const spring = 0.08;
+    const damping = 0.7;
+    bar.velocity += (bar.target - bar.height) * spring;
+    bar.velocity *= damping;
+    bar.height += bar.velocity;
+    bar.height = Math.max(0.02, Math.min(1, bar.height));
+
+    const barH = bar.height * h;
+    const x = i * (barW + gap);
+    const y = h - barH;
+
+    // Color: accent gradient
+    const grad = ctx.createLinearGradient(x, y, x, h);
+    if (isPlaying) {
+      grad.addColorStop(0, "rgba(0, 201, 107, 0.9)");
+      grad.addColorStop(1, "rgba(0, 201, 107, 0.3)");
+    } else {
+      grad.addColorStop(0, "rgba(106, 106, 106, 0.5)");
+      grad.addColorStop(1, "rgba(106, 106, 106, 0.15)");
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    const radius = Math.min(barW / 2, 3 * devicePixelRatio);
+    ctx.roundRect(x, y, barW, barH, [radius, radius, 0, 0]);
+    ctx.fill();
+  }
+
+  canvas.classList.toggle("active", isPlaying);
+  vizAnimId = requestAnimationFrame(drawVisualizerFrame);
+}
+
+// ── Drag & Drop File Import ───────────────────────────────
+
+const AUDIO_EXTENSIONS = new Set([
+  "mp3", "flac", "wav", "ogg", "aac", "m4a", "wma", "opus", "webm",
+]);
+
+function isAudioFile(name) {
+  const ext = name.split(".").pop().toLowerCase();
+  return AUDIO_EXTENSIONS.has(ext);
+}
+
+function trackFromFile(file) {
+  const name = file.name;
+  const base = name.replace(/\.[^.]+$/, "");
+  // Try "Artist - Title" pattern
+  let title = base;
+  let artist = "Unknown Artist";
+  const dashIdx = base.indexOf(" - ");
+  if (dashIdx > 0) {
+    artist = base.substring(0, dashIdx).trim();
+    title = base.substring(dashIdx + 3).trim();
+  }
+  return {
+    id: nextImportId++,
+    title,
+    artist,
+    album: "Local Import",
+    duration: 0, // unknown until decoded
+    color: `hsl(${Math.floor(Math.random() * 360)}, 50%, 25%)`,
+    file, // keep reference for future audio decode
+  };
+}
+
+// Recursively read entries from a dropped folder
+function readEntriesRecursive(entry) {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file((f) => {
+        if (isAudioFile(f.name)) resolve([f]);
+        else resolve([]);
+      }, () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const allFiles = [];
+      const readBatch = () => {
+        reader.readEntries(async (entries) => {
+          if (entries.length === 0) {
+            resolve(allFiles);
+            return;
+          }
+          for (const e of entries) {
+            const files = await readEntriesRecursive(e);
+            allFiles.push(...files);
+          }
+          readBatch(); // directories may return entries in batches
+        }, () => resolve(allFiles));
+      };
+      readBatch();
+    } else {
+      resolve([]);
+    }
+  });
+}
+
+async function handleDrop(e) {
+  e.preventDefault();
+  dom.dropOverlay.classList.remove("visible");
+
+  const items = e.dataTransfer.items;
+  if (!items || items.length === 0) return;
+
+  const audioFiles = [];
+
+  // Use webkitGetAsEntry for folder support
+  const entries = [];
+  for (let i = 0; i < items.length; i++) {
+    const entry = items[i].webkitGetAsEntry?.();
+    if (entry) entries.push(entry);
+  }
+
+  if (entries.length > 0) {
+    for (const entry of entries) {
+      const files = await readEntriesRecursive(entry);
+      audioFiles.push(...files);
+    }
+  } else {
+    // Fallback: plain file list
+    for (const file of e.dataTransfer.files) {
+      if (isAudioFile(file.name)) audioFiles.push(file);
+    }
+  }
+
+  if (audioFiles.length === 0) return;
+
+  // Convert to track objects and add to state
+  const newTracks = audioFiles.map(trackFromFile);
+  state.tracks.push(...newTracks);
+
+  // Update shuffle order if active
+  if (state.shuffle) generateShuffleOrder();
+
+  renderTracklist();
+}
+
+let dragCounter = 0;
+
+function initDragDrop() {
+  // Show overlay when files dragged over the window
+  document.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes("Files")) return;
+    dragCounter++;
+    dom.dropOverlay.classList.add("visible");
+  });
+
+  document.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      dom.dropOverlay.classList.remove("visible");
+    }
+  });
+
+  document.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+
+  document.addEventListener("drop", (e) => {
+    dragCounter = 0;
+    handleDrop(e);
+  });
+}
