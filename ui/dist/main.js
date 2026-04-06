@@ -396,6 +396,7 @@ renderTracklist();
 renderPlaylists();
 initVisualizer();
 initDragDrop();
+initAuth();
 
 // ── Playlist Management ──────────────────────────────────
 
@@ -765,4 +766,137 @@ function initDragDrop() {
     dragCounter = 0;
     handleDrop(e);
   });
+}
+
+// ── Auth ──────────────────────────────────────────────────
+
+const authState = {
+  mode: "login",
+  user: null,
+  session: null,
+  loading: false,
+};
+
+async function tauriInvoke(cmd, args) {
+  if (window.__TAURI__) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  throw new Error("Tauri not available");
+}
+
+const authDom = {
+  screen: $("#auth-screen"),
+  form: $("#auth-form"),
+  email: $("#auth-email"),
+  password: $("#auth-password"),
+  error: $("#auth-error"),
+  submit: $("#auth-submit"),
+  skip: $("#auth-skip"),
+  tabs: $$("#auth-screen .auth-tab"),
+  topbarUser: $("#topbar-user"),
+  userEmail: $("#user-email"),
+  btnLogout: $("#btn-logout"),
+};
+
+function showAuthScreen() {
+  authDom.screen.classList.remove("hidden");
+}
+
+function hideAuthScreen() {
+  authDom.screen.classList.add("hidden");
+}
+
+function setAuthMode(mode) {
+  authState.mode = mode;
+  authDom.tabs.forEach((t) => {
+    t.classList.toggle("active", t.dataset.tab === mode);
+  });
+  authDom.submit.textContent = mode === "login" ? "Log In" : "Sign Up";
+  authDom.error.textContent = "";
+}
+
+function updateUserUI() {
+  if (authState.user) {
+    authDom.topbarUser.style.display = "flex";
+    authDom.userEmail.textContent = authState.user.email || "User";
+  } else {
+    authDom.topbarUser.style.display = "none";
+    authDom.userEmail.textContent = "";
+  }
+}
+
+// Tab switching (event delegation on parent)
+const authTabsContainer = $("#auth-screen .auth-tabs");
+if (authTabsContainer) {
+  authTabsContainer.addEventListener("click", (e) => {
+    const tab = e.target.closest(".auth-tab");
+    if (tab && tab.dataset.tab) {
+      setAuthMode(tab.dataset.tab);
+    }
+  });
+}
+
+// Form submit
+authDom.form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (authState.loading) return;
+
+  const email = authDom.email.value.trim();
+  const password = authDom.password.value;
+  if (!email || !password) return;
+
+  authState.loading = true;
+  authDom.submit.disabled = true;
+  authDom.error.textContent = "";
+
+  try {
+    const cmd = authState.mode === "login" ? "auth_sign_in" : "auth_sign_up";
+    const session = await tauriInvoke(cmd, { email, password });
+    authState.session = session;
+    authState.user = session.user;
+    hideAuthScreen();
+    updateUserUI();
+  } catch (err) {
+    let msg = String(err);
+    try {
+      const parsed = JSON.parse(msg.replace(/^[^{]*/, ""));
+      msg = parsed.msg || parsed.error_description || parsed.message || msg;
+    } catch {}
+    authDom.error.textContent = msg;
+  } finally {
+    authState.loading = false;
+    authDom.submit.disabled = false;
+  }
+});
+
+// Skip (offline mode)
+authDom.skip.addEventListener("click", () => {
+  hideAuthScreen();
+  updateUserUI();
+});
+
+// Logout
+authDom.btnLogout.addEventListener("click", async () => {
+  try {
+    await tauriInvoke("auth_sign_out", {});
+  } catch {}
+  authState.user = null;
+  authState.session = null;
+  updateUserUI();
+  showAuthScreen();
+});
+
+// Check existing session on load
+async function initAuth() {
+  try {
+    const session = await tauriInvoke("auth_get_session", {});
+    if (session) {
+      authState.session = session;
+      authState.user = session.user;
+      hideAuthScreen();
+      updateUserUI();
+      return;
+    }
+  } catch {}
+  // No session — auth screen stays visible
 }

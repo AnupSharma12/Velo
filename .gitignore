@@ -1,6 +1,10 @@
+# Secrets
+.env
+
 # Rust / Cargo
 /target/
 **/*.rs.bk
+build.log
 
 # Node
 node_modules/
